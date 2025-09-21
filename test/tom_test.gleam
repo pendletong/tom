@@ -540,6 +540,26 @@ The quick brown \\\r\n
   |> should.equal(Ok(expected))
 }
 
+pub fn parse_multi_line_string_with_escapes_test() {
+  let expected =
+    dict.from_list([#("a", tom.String("\f\r\n\u{001B}\u{0008}hello\t\nworld😃"))])
+  "a = \"\"\"
+\\f\\r\\n\\e\\bhello\\t
+world\\U0001F603\"\"\"
+"
+  |> tom.parse
+  |> should.equal(Ok(expected))
+}
+
+pub fn parse_multi_line_string_with_invalid_escapes_test() {
+  "a = \"\"\"
+hello\\s
+world\\U0001F603\"\"\"
+"
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("\\s", "\\[btnfrexuU\"\\]")))
+}
+
 pub fn parse_nan_test() {
   let expected = dict.from_list([#("a", tom.Nan(tom.Positive))])
   "a = nan\n"
@@ -956,6 +976,129 @@ pub fn parse_sequence_b_test() {
   "a = \"\\b\""
   |> tom.parse
   |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{0008}"))])))
+}
+
+pub fn parse_sequence_invalid_test() {
+  "a = \"hello\\s\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("\\s", "\\[btnfrexuU\"\\]")))
+}
+
+pub fn parse_utf16_test() {
+  "a = \"\\xE9\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{00E9}"))])))
+  "a = \"\\u00E9\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{00E9}"))])))
+  "a = \"\\ua0A0\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{A0A0}"))])))
+}
+
+pub fn parse_utf16_multiline_test() {
+  // Multi line
+  "a = \"\"\"\\xE9\"\"\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{00E9}"))])))
+  "a = \"\"\"\\u00E9\"\"\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{00E9}"))])))
+  "a = \"\"\"\\ua0A0\"\"\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{A0A0}"))])))
+}
+
+pub fn parse_utf16_invalid_test() {
+  "a = \"\\xG9\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("G9", "2[0-9A-F]")))
+  "a = \"\\xF\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("F\"", "2[0-9A-F]")))
+  "a = \"\\uDEE9\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("DEE9", "0x0000-0xD7FF|0xE000-0xFFFF")))
+  "a = \"\\u00ZZ\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("00ZZ", "4[0-9A-F]")))
+  "a = \"\\u00a\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("00a\"", "4[0-9A-F]")))
+}
+
+pub fn parse_utf16_multiline_invalid_test() {
+  "a = \"\"\"\\xG9\"\"\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("G9", "2[0-9A-F]")))
+  "a = \"\"\"\\xF\"\"\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("F\"", "2[0-9A-F]")))
+  "a = \"\"\"\\uDEE9\"\"\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("DEE9", "0x0000-0xD7FF|0xE000-0xFFFF")))
+  "a = \"\"\"\\u00ZZ\"\"\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("00ZZ", "4[0-9A-F]")))
+  "a = \"\"\"\\u00a\"\"\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("00a\"", "4[0-9A-F]")))
+}
+
+pub fn parse_utf32_test() {
+  "a = \"\\U000000E9\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{00E9}"))])))
+  "a = \"\\U0010fFfF\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{10FFFF}"))])))
+}
+
+pub fn parse_utf32_multiline_test() {
+  "a = \"\"\"\\U000000E9\"\"\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{00E9}"))])))
+  "a = \"\"\"\\U0010fFfF\"\"\""
+  |> tom.parse
+  |> should.equal(Ok(dict.from_list([#("a", tom.String("\u{10FFFF}"))])))
+}
+
+pub fn parse_utf32_invalid_test() {
+  "a = \"\\U0000DEE9\""
+  |> tom.parse
+  |> should.equal(
+    Error(tom.Unexpected("0000DEE9", "0x0000-0xD7FF|0xE000-0x10FFFF")),
+  )
+  "a = \"\\U00110000\""
+  |> tom.parse
+  |> should.equal(
+    Error(tom.Unexpected("00110000", "0x0000-0xD7FF|0xE000-0x10FFFF")),
+  )
+  "a = \"\\U000000ZZ\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("000000ZZ", "8[0-9A-F]")))
+  "a = \"\\U000000a\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("000000a\"", "8[0-9A-F]")))
+}
+
+pub fn parse_utf32_multiline_invalid_test() {
+  "a = \"\"\"\\U0000DEE9\"\"\""
+  |> tom.parse
+  |> should.equal(
+    Error(tom.Unexpected("0000DEE9", "0x0000-0xD7FF|0xE000-0x10FFFF")),
+  )
+  "a = \"\"\"\\U00110000\"\"\""
+  |> tom.parse
+  |> should.equal(
+    Error(tom.Unexpected("00110000", "0x0000-0xD7FF|0xE000-0x10FFFF")),
+  )
+  "a = \"\"\"\\U000000ZZ\"\"\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("000000ZZ", "8[0-9A-F]")))
+  "a = \"\"\"\\U000000a\"\"\""
+  |> tom.parse
+  |> should.equal(Error(tom.Unexpected("000000a\"", "8[0-9A-F]")))
 }
 
 pub fn parse_ignore_comments_test() {

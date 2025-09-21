@@ -2,23 +2,23 @@
 ////
 //// ```gleam
 //// import tom
-//// 
+////
 //// const config = "
 ////   [person]
 ////   name = \"Lucy\"
 ////   is_cool = true
 //// "
-//// 
+////
 //// pub fn main() {
 ////   // Parse a string of TOML
 ////   let assert Ok(parsed) = tom.parse(config)
-//// 
+////
 ////   // Now you can work with the data directly, or you can use the `get_*`
 ////   // functions to retrieve values.
-//// 
+////
 ////   tom.get_string(parsed, ["person", "name"])
 ////   // -> Ok("Lucy")
-//// 
+////
 ////   let is_cool = tom.get_bool(parsed, ["person", "is_cool"])
 ////   // -> Ok(True)
 //// }
@@ -100,7 +100,7 @@ pub type GetError {
 /// Get a value of any type from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = 1")
 /// get(parsed, ["a", "b", "c"])
@@ -129,7 +129,7 @@ pub fn get(
 /// Get an int from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = 1")
 /// get_int(parsed, ["a", "b", "c"])
@@ -151,7 +151,7 @@ pub fn get_int(
 /// Get a float from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = 1.1")
 /// get_float(parsed, ["a", "b", "c"])
@@ -173,7 +173,7 @@ pub fn get_float(
 /// Get a bool from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = true")
 /// get_bool(parsed, ["a", "b", "c"])
@@ -195,7 +195,7 @@ pub fn get_bool(
 /// Get a string from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = \"ok\"")
 /// get_string(parsed, ["a", "b", "c"])
@@ -216,7 +216,7 @@ pub fn get_string(
 /// Get a date from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = 1979-05-27")
 /// get_date(parsed, ["a", "b", "c"])
@@ -237,7 +237,7 @@ pub fn get_date(
 /// Get a time from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = 07:32:00")
 /// get_time_of_day(parsed, ["a", "b", "c"])
@@ -258,7 +258,7 @@ pub fn get_time_of_day(
 /// Get a date-time from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = 1979-05-27T07:32:00")
 /// get_calendar_time(parsed, ["a", "b", "c"])
@@ -283,7 +283,7 @@ pub fn get_calendar_time(
 /// be as it would be different in different time zones.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = 1970-00-00T00:00:00Z")
 /// get_timestamp(parsed, ["a", "b", "c"])
@@ -306,7 +306,7 @@ pub fn get_timestamp(
 /// Get an array from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = [1, 2]")
 /// get_array(parsed, ["a", "b", "c"])
@@ -329,7 +329,7 @@ pub fn get_array(
 /// Get a table from a TOML document dictionary.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = { d = 1 }")
 /// get_table(parsed, ["a", "b", "c"])
@@ -353,7 +353,7 @@ pub fn get_table(
 /// This could be an int, a float, a NaN, or an infinity.
 ///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(parsed) = parse("a.b.c = { d = inf }")
 /// get_number(parsed, ["a", "b", "c"])
@@ -1019,8 +1019,28 @@ fn parse_string(input: Tokens, string: String) -> Parsed(Toml) {
     ["\\", "n", ..input] -> parse_string(input, string <> "\n")
     ["\\", "r", ..input] -> parse_string(input, string <> "\r")
     ["\\", "f", ..input] -> parse_string(input, string <> "\f")
+    ["\\", "x", ..input] -> {
+      case parse_utf16(["0", "0", ..input]) {
+        Ok(#(unicode, input)) -> parse_string(input, string <> unicode)
+        Error(Unexpected("00" <> a, "4" <> b)) -> Error(Unexpected(a, "2" <> b))
+        Error(e) -> Error(e)
+      }
+    }
+    ["\\", "u", ..input] -> {
+      case parse_utf16(input) {
+        Ok(#(unicode, input)) -> parse_string(input, string <> unicode)
+        Error(e) -> Error(e)
+      }
+    }
+    ["\\", "U", ..input] -> {
+      case parse_utf32(input) {
+        Ok(#(unicode, input)) -> parse_string(input, string <> unicode)
+        Error(e) -> Error(e)
+      }
+    }
     ["\\", "\"", ..input] -> parse_string(input, string <> "\"")
     ["\\", "\\", ..input] -> parse_string(input, string <> "\\")
+    ["\\", token, ..] -> Error(Unexpected("\\" <> token, "\\[btnfrexuU\"\\]"))
     [] -> Error(Unexpected("EOF", "\""))
     ["\n", ..] -> Error(Unexpected("\n", "\""))
     ["\r\n", ..] -> Error(Unexpected("\r\n", "\""))
@@ -1041,8 +1061,34 @@ fn parse_multi_line_string(input: Tokens, string: String) -> Parsed(Toml) {
     ["\\", "t", ..input] -> parse_multi_line_string(input, string <> "\t")
     ["\\", "n", ..input] -> parse_multi_line_string(input, string <> "\n")
     ["\\", "r", ..input] -> parse_multi_line_string(input, string <> "\r")
+    ["\\", "e", ..input] -> parse_multi_line_string(input, string <> "\u{001b}")
+    ["\\", "b", ..input] -> parse_multi_line_string(input, string <> "\u{0008}")
+    ["\\", "f", ..input] -> parse_multi_line_string(input, string <> "\f")
+    ["\\", "x", ..input] -> {
+      case parse_utf16(["0", "0", ..input]) {
+        Ok(#(unicode, input)) ->
+          parse_multi_line_string(input, string <> unicode)
+        Error(Unexpected("00" <> a, "4" <> b)) -> Error(Unexpected(a, "2" <> b))
+        Error(e) -> Error(e)
+      }
+    }
+    ["\\", "u", ..input] -> {
+      case parse_utf16(input) {
+        Ok(#(unicode, input)) ->
+          parse_multi_line_string(input, string <> unicode)
+        Error(e) -> Error(e)
+      }
+    }
+    ["\\", "U", ..input] -> {
+      case parse_utf32(input) {
+        Ok(#(unicode, input)) ->
+          parse_multi_line_string(input, string <> unicode)
+        Error(e) -> Error(e)
+      }
+    }
     ["\\", "\"", ..input] -> parse_multi_line_string(input, string <> "\"")
     ["\\", "\\", ..input] -> parse_multi_line_string(input, string <> "\\")
+    ["\\", token, ..] -> Error(Unexpected("\\" <> token, "\\[btnfrexuU\"\\]"))
     [] -> Error(Unexpected("EOF", "\""))
     [g, ..input] -> parse_multi_line_string(input, string <> g)
   }
@@ -1071,6 +1117,50 @@ fn parse_literal_string(input: Tokens, string: String) -> Parsed(Toml) {
     ["\r\n", ..] -> Error(Unexpected("\r\n", "'"))
     ["'", ..input] -> Ok(#(String(string), input))
     [g, ..input] -> parse_literal_string(input, string <> g)
+  }
+}
+
+fn parse_utf16(input: Tokens) -> Result(#(String, Tokens), ParseError) {
+  case input {
+    [h1, h2, h3, h4, ..input] -> {
+      let hex_value = h1 <> h2 <> h3 <> h4
+      case int.base_parse(hex_value, 16) {
+        Ok(i) if i >= 0xD800 && i <= 0xDFFF ->
+          Error(Unexpected(hex_value, "0x0000-0xD7FF|0xE000-0xFFFF"))
+        Ok(i) -> {
+          case string.utf_codepoint(i) {
+            Ok(codepoint) -> {
+              Ok(#(string.from_utf_codepoints([codepoint]), input))
+            }
+            Error(_) -> Error(Unexpected(hex_value, "4[0-9A-F]"))
+          }
+        }
+        Error(_) -> Error(Unexpected(hex_value, "4[0-9A-F]"))
+      }
+    }
+    _ -> Error(Unexpected(string.concat(input), "4[0-9A-F]"))
+  }
+}
+
+fn parse_utf32(input: Tokens) -> Result(#(String, Tokens), ParseError) {
+  case input {
+    [h1, h2, h3, h4, h5, h6, h7, h8, ..input] -> {
+      let hex_value = h1 <> h2 <> h3 <> h4 <> h5 <> h6 <> h7 <> h8
+      case int.base_parse(hex_value, 16) {
+        Ok(i) if i >= 0xD800 && i <= 0xDFFF || i > 0x10FFFF ->
+          Error(Unexpected(hex_value, "0x0000-0xD7FF|0xE000-0x10FFFF"))
+        Ok(i) -> {
+          case string.utf_codepoint(i) {
+            Ok(codepoint) -> {
+              Ok(#(string.from_utf_codepoints([codepoint]), input))
+            }
+            Error(_) -> Error(Unexpected(hex_value, "8[0-9A-F]"))
+          }
+        }
+        Error(_) -> Error(Unexpected(hex_value, "8[0-9A-F]"))
+      }
+    }
+    _ -> Error(Unexpected(string.concat(input), "8[0-9A-F]"))
   }
 }
 
